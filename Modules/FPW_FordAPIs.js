@@ -108,7 +108,7 @@ module.exports = class FPW_FordAPIs {
         let refresh;
         if (expired && refreshToken) {
             console.log('Token has expired... Refreshing Token...');
-            refresh = await this.refreshToken();
+            refresh = await this.fetchTokenFromRefreshToken();
         } else if (legacyToken || noValue(token) || noValue(expiresAt) || noValue(refreshToken)) {
             if (legacyToken) {
                 console.log('Legacy Token found... Clearing and Forcing Fetch...');
@@ -175,11 +175,10 @@ module.exports = class FPW_FordAPIs {
     }
 
     async tokenExpired(ts) {
-        try {
-            return ts ? new Date() >= Date.parse(ts) : false;
-        } catch (err) {
-            return true;
-        }
+        if (!ts) return false;
+        const expMs = Number(ts);
+        if (!Number.isFinite(expMs)) return true;
+        return Date.now() >= expMs - 60000;
     }
 
     async fetchToken(src = null) {
@@ -303,7 +302,7 @@ module.exports = class FPW_FordAPIs {
             'Content-Type': 'application/x-www-form-urlencoded',
             Cookie: cookies,
         };
-        request.body = `operation=verify&login-form-type=pwd&username=${username}&password=${password}`;
+        request.body = `operation=verify&login-form-type=pwd&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
         // console.log(`attemptLogin() | Request Body: ${request.body}`);
         request.onRedirect = (req) => {
             // console.log(req);
@@ -324,7 +323,7 @@ module.exports = class FPW_FordAPIs {
         }
     }
 
-    async fetchAuthorizationCode(url, client, cookies) {
+    async fetchAuthorizationCode(url, cookies) {
         // console.log(`Fetching Authorization Code... ${url}`);
         const request = new Request(url);
         request.method = 'GET';
@@ -999,7 +998,7 @@ module.exports = class FPW_FordAPIs {
         return undefined;
     }
 
-    async makeFordRequest(desc, url, method, json = false, customHeaders = undefined, body = undefined) {
+    async makeFordRequest(desc, url, method, json = false, customHeaders = undefined, body = undefined, isRetry = false) {
         const funcDesc = `makeFordRequest(${desc})`;
         try {
             const authMsg = await this.checkAuth(`${funcDesc}`);
@@ -1036,15 +1035,23 @@ module.exports = class FPW_FordAPIs {
 
             if (data == this.FPW.textMap().errorMessages.accessDenied) {
                 console.log(`${funcDesc}: Access Denied. Fetching New Token and Requesting Data Again!`);
+                if (isRetry) {
+                    return this.FPW.textMap().errorMessages.accessDenied;
+                }
                 const result = await this.fetchToken(`${funcDesc}(AccessDenied)`);
                 if (result && result == this.FPW.textMap().errorMessages.invalidGrant) {
                     return result;
                 }
-                data = await this.makeFordRequest(desc, url, method, json, customHeaders, body);
+                let retryHeaders = customHeaders;
+                if (customHeaders) {
+                    const freshToken = await this.FPW.getSettingVal('fpToken');
+                    retryHeaders = { ...customHeaders, 'auth-token': `${freshToken}` };
+                }
+                data = await this.makeFordRequest(desc, url, method, json, retryHeaders, body, true);
             } else {
                 data = json ? data : JSON.parse(data);
             }
-            if (data.statusCode && (data.statusCode !== 200 || data.statusCode !== 207)) {
+            if (data.statusCode && data.statusCode !== 200 && data.statusCode !== 207) {
                 console.log(`${funcDesc} | Status: (${resp.statusCode}) | Resp: ${JSON.stringify(data)}`);
                 return this.FPW.textMap().errorMessages.connectionErrorOrVin;
             }
@@ -1105,7 +1112,7 @@ module.exports = class FPW_FordAPIs {
         // vehicleData.SCRIPT_TS = this.SCRIPT_TS;
         if (statusData == this.FPW.textMap().errorMessages.invalidGrant || statusData == this.FPW.textMap().errorMessages.connectionErrorOrVin || statusData == this.FPW.textMap().errorMessages.unknownError || statusData == this.FPW.textMap().errorMessages.noVin || statusData == this.FPW.textMap().errorMessages.noCredentials) {
             // console.log('fetchVehicleData | Error: ' + statusData);
-            let localData = this.FPW.Files.readJsonFile('Vehicle Data');
+            let localData = await this.FPW.Files.readJsonFile('Vehicle Data');
             if (localData) {
                 vehicleData = localData;
             }
@@ -1454,7 +1461,7 @@ module.exports = class FPW_FordAPIs {
     async sendVehicleCmd(cmd_type = '', mainMenuRefresh = true) {
         const authMsg = await this.checkAuth('sendVehicleCmd(' + cmd_type + ')');
         if (authMsg) {
-            console.log(`sendVehicleCmd(${cmd_type}): ${result}`);
+            console.log(`sendVehicleCmd(${cmd_type}): ${authMsg}`);
             return;
         }
         let token = await this.FPW.getSettingVal('fpToken');
@@ -1490,11 +1497,13 @@ module.exports = class FPW_FordAPIs {
                 // console.log(data);
                 if (data == 'Access Denied') {
                     console.log('sendVehicleCmd: Auth Token Expired. Fetching new token and fetch raw data again');
-                    let result = await this.fetchToken(true, 'sendVehicleCmd(AccessDenied)'); //await this.FPW.FordAPI.fetchToken();
+                    let result = await this.fetchToken('sendVehicleCmd(AccessDenied)'); //await this.FPW.FordAPI.fetchToken();
                     if (result && result == this.FPW.textMap().errorMessages.invalidGrant) {
                         console.log(`sendVehicleCmd(${cmd_type}): ${result}`);
                         return result;
                     }
+                    token = await this.FPW.getSettingVal('fpToken');
+                    req.headers['auth-token'] = `${token}`;
                     data = await req.loadString();
                 }
                 data = JSON.parse(data);

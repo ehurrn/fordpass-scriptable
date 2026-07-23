@@ -585,7 +585,7 @@ class Widget {
 
             // console.log('(prepWidget) Fetching Vehicle Data...');
             console.log(`(prepWidget) Fetching Vehicle Data | Local: (${loadLocal})`);
-            const vData = await this.FordAPI.fetchVehicleData(loadLocal ? this.fetchTypes.local : this.fetchTypes.force, 'prepWidget');
+            const vData = await this.FordAPI.fetchVehicleData(loadLocal ? this.fetchTypes.local : this.fetchTypes.decide, 'prepWidget');
             return isWidget ? await this.leanOutDataForWidget(vData) : vData;
         } catch (err) {
             this.logError(`prepWidget() Error: ${err}`, true);
@@ -876,7 +876,7 @@ class Widget {
             //     await this.Notifications.processNotification('otaUpdate');
             //     // return;
             // }
-            if (vData.batteryStatus !== undefined && vData.batteryLevel === 'STATUS_LOW') {
+            if (vData.batteryStatus !== undefined && vData.batteryStatus === 'STATUS_LOW') {
                 await this.Notifications.processNotification('lvBatteryLow');
             }
             if (vData.tirePressure && Object.keys(vData.tirePressure).length) {
@@ -889,10 +889,10 @@ class Widget {
                     }
                 }
                 if (lowTires.length) {
-                    await this.Notifications.processNotification('lowTires', lowTires.join(', '));
+                    await this.Notifications.processNotification('tireLow', lowTires.join(', '));
                 }
             }
-            if (vData.capabilities.includes('EV_SMART_CHARGING') && vData.chargingStatus && vData.chargingStatus.value && vData.chargingStatus.value === 'EvsePaused') {
+            if (vData.capabilities?.includes('EV_SMART_CHARGING') && vData.chargingStatus && vData.chargingStatus.value && vData.chargingStatus.value === 'EvsePaused') {
                 await this.Notifications.processNotification('evChargingPaused');
             }
 
@@ -932,7 +932,7 @@ class Widget {
     }
 
     async getChangeFlags() {
-        const changes = this.changelogs[this.SCRIPT_VERSION];
+        const changes = this.changelogs?.[this.SCRIPT_VERSION];
         return changes && changes.clearFlags && changes.clearFlags.length > 0 ? changes.clearFlags : [];
     }
 
@@ -1174,7 +1174,7 @@ class Widget {
             let fileName = 'Fordpass Widget';
             if (curId && curId > 0) {
                 code = await this.updateIdInCode(code, curId);
-                fileName += `${fileName} ${curId}`;
+                fileName = `Fordpass Widget ${curId}`;
             }
             const hash = Array.from(code).reduce((accumulator, currentChar) => (accumulator << 5) - accumulator + currentChar.charCodeAt(0), 0);
 
@@ -2693,7 +2693,7 @@ class Widget {
             const barRow = await this.createRow(fuelBattCol, { '*setPadding': [0, 0, 0, 0], '*centerAlignContent': null });
 
             barRow.addSpacer();
-            await this.createImage(barRow, await this.createProgressBar(lvlValue ? lvlValue : 50, vData), { '*centerAlignImage': null, imageSize: new Size(this.sizeMap[this.widgetSize].barGauge.w, this.sizeMap[this.widgetSize].barGauge.h + 3) });
+            await this.createImage(barRow, await this.createProgressBar(lvlValue >= 0 ? lvlValue : 50, vData), { '*centerAlignImage': null, imageSize: new Size(this.sizeMap[this.widgetSize].barGauge.w, this.sizeMap[this.widgetSize].barGauge.h + 3) });
             barRow.addSpacer();
 
             // Distance/Range to Empty
@@ -2827,7 +2827,7 @@ class Widget {
 
             // Fuel/Battery Level BAR
             let barRow = await this.createRow(elemCol, { '*setPadding': [0, 0, 0, 0], '*centerAlignContent': null });
-            await this.createImage(barRow, await this.createProgressBar(lvlValue ? lvlValue : 50, vData), { '*centerAlignImage': null, imageSize: new Size(this.sizeMap[this.widgetSize].barGauge.w, this.sizeMap[this.widgetSize].barGauge.h + 3) });
+            await this.createImage(barRow, await this.createProgressBar(lvlValue >= 0 ? lvlValue : 50, vData), { '*centerAlignImage': null, imageSize: new Size(this.sizeMap[this.widgetSize].barGauge.w, this.sizeMap[this.widgetSize].barGauge.h + 3) });
 
             // Distance to Empty
             let dteRow = await this.createRow(elemCol, { '*centerAlignContent': null, '*topAlignContent': null });
